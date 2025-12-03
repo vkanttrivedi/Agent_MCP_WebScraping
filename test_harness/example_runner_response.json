@@ -1,0 +1,11 @@
+[
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "output_text",
+        "text": "### Page Snapshot:\n```yaml\n- generic:\n  - heading \"Example Domain\"\n  - image: shot.png\n```"
+      }
+    ]
+  }
+]
