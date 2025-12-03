@@ -30,21 +30,41 @@ python agent_webscrap.py
 
 Notes: the script spawns `npx @playwright/mcp` using `MCPServerStdio`. Ensure `node`/`npx` are available on your PATH.
 
-## Key patterns and conventions (project-specific)
-- Message payloads passed to `Runner.run` use a structured list of dicts: roles (`user`/`assistant`), and `content` entries with `type` values such as `input_text` and `output_text`. See the example payload in `agent_webscrap.py`.
-- MCP servers are created and passed into the `Agent` via the `mcp_servers` parameter — treat MCP servers as external capabilities (browser, system commands) that the agent calls rather than internal libraries.
-- Logging/tracing: the script configures `logging.getLogger("openai.agents")` and calls `set_tracing_disabled(True)` — follow this pattern if adding instrumentation.
+<!-- Copilot / AI agent guidance for this repository -->
+# Project: project_codex — AI agent connector (quick guide for AI coding agents)
 
-## Integration and external dependencies
-- External runtime: Node.js (`npx`) is required to start the Playwright MCP integration.
-- Auth: `GITHUB_TOKEN` must be a GitHub Personal Access Token for the `models.github.ai` endpoint. The code uses `AsyncOpenAI(base_url=..., api_key=os.environ['GITHUB_TOKEN'])`.
+This repository demonstrates wiring an `Agent` to external MCP servers (Playwright) and a hosted model. The goal: give an AI coding agent immediate, actionable knowledge to be productive.
 
-## Files to inspect when making changes
-- `agent_webscrap.py` — main example and canonical usage patterns (agent creation, model config, MCP servers, Runner invocation).
+**Big picture**
+- `agent_webscrap.py` is the single-run example: it creates an `Agent`, configures MCP servers (via `MCPServerStdio`), and calls `Runner.run` with a typed message list.
+- Model boundary: the code uses `AsyncOpenAI` pointing to `https://models.github.ai/inference` and passes that client into `OpenAIChatCompletionsModel`. Authentication comes exclusively from the `GITHUB_TOKEN` env var.
+- MCPs are external processes (started with `npx @playwright/mcp` in this repo). Treat MCP servers as out-of-process tools the agent invokes.
 
-## Useful examples to copy/paste
-- Minimal agent creation (from file):
+**Quick start (tested steps)**
+- Install python deps: `pip install -r requirements.txt` (or `pip install openai-agents==0.*` if adding minimal deps).
+- Set GitHub PAT (PowerShell):
+  - `$env:GITHUB_TOKEN = "<your-github-pat>"`
+- Ensure `node` + `npx` are on PATH (Playwright is pulled by `npx`).
+- Run example: `python agent_webscrap.py`
 
+**Important repo-specific conventions & patterns**
+- Message shape: `Runner.run` expects a list of message objects. Each message uses `role` and `content` where `content` is an array of typed pieces (commonly `input_text` for user prompts and `output_text` for assistant responses). Example in `agent_webscrap.py`.
+- Do NOT change the `content` entry types (`input_text` / `output_text`) or the overall list/role shape — downstream parsers and `examples/parse_output.py` assume this exact shape.
+- MCP server construction: follow existing `MCPServerStdio(params=..., name=..., client_session_timeout_seconds=...)` usage. Preserve `name` and `client_session_timeout_seconds` when adding servers for discoverability and session behavior.
+- Logging: the example enables `logging.getLogger("openai.agents")` and sets `set_tracing_disabled(True)`. Use the same logger name to surface agent runtime logs.
+
+**Files to inspect (high signal)**
+- `agent_webscrap.py` — canonical example: model client, MCPServerStdio params, `Runner.run` payload and example response shape.
+- `examples/parse_output.py` — reference parser for `output_text` blocks: shows extracting YAML snapshots, JS code blocks, and screenshot paths.
+- `requirements.txt` — canonical dependency pinning for local runs.
+
+**Integration & runtime notes (gotchas found in code)**
+- The model client uses the `GITHUB_TOKEN` PAT — do not substitute with other OpenAI-style env vars without updating the client config.
+- Playwright is launched by `npx`, so Node must be installed. Playwright package is not preinstalled; `npx` fetches the MCP binary at runtime.
+- MCP errors commonly indicate missing `npx`/Node or network restrictions preventing `npx` from fetching packages.
+
+**Examples to copy when editing code**
+- Minimal agent creation (from `agent_webscrap.py`):
 ```
 agent = Agent(
   name="agent",
@@ -53,71 +73,21 @@ agent = Agent(
   model=OpenAIChatCompletionsModel("openai/gpt-4.1", openaiClient),
 )
 ```
-
-- MCP server example (Playwright via stdio):
-
+- Playwright MCP server usage:
 ```
 MCPServerStdio(params={
   "command": "npx",
-  "args": ["-y", "@playwright/mcp@latest"]
-})
+  "args": ["-y", "@playwright/mcp@latest"],
+}, name="aitk-playwright-example", client_session_timeout_seconds=30)
 ```
 
-## What to avoid / gotchas (discoverable from code)
-- Don't assume local OpenAI API keys; this script targets `models.github.ai` and expects `GITHUB_TOKEN`.
-- Node and `npx` are required; errors about MCP startup typically mean `npx`/Node is missing or blocked by environment restrictions.
+**Parsing / downstream tooling expectations**
+- Parsers (see `examples/parse_output.py`) look for `output_text` entries and expect YAML fenced blocks (```yaml```) and JS blocks (```js```) embedded in the assistant text. Keep that formatting when returning structured snapshots or code.
 
-## If you modify this repo
-- Keep the message shape used in `Runner.run` consistent. Tests or downstream tooling may rely on `content` entries with `type` fields like `input_text`/`output_text`.
-- When adding new MCP servers, follow the `MCPServer*` constructors and preserve `client_session_timeout_seconds` and `name` fields for discoverability.
-- When adding new MCP servers, follow the `MCPServer*` constructors and preserve `client_session_timeout_seconds` and `name` fields for discoverability.
+**When editing this repo**
+- Preserve the `Runner.run` message schema and `content` types.
+- Preserve MCP server `name` and `client_session_timeout_seconds` when adding servers.
+- Keep `AsyncOpenAI(base_url=..., api_key=os.environ['GITHUB_TOKEN'])` behavior unless explicitly migrating the model endpoint.
 
-## Message schema (example)
-- Runner messages are a JSON list of message objects. Each message contains `role` and a `content` array of typed entries. Example payload used in `agent_webscrap.py`:
-
-```json
-[
-  {
-    "role": "user",
-    "content": [
-      { "type": "input_text", "text": "Please navigate to https://www.example.com and extract heading." }
-    ]
-  },
-  {
-    "role": "assistant",
-    "status": "completed",
-    "content": [
-      { "type": "output_text", "text": "### Page Title: Example Domain\n\nSummary: Example Domain is a placeholder site used for documentation." }
-    ]
-  }
+If any part of this file is unclear or you want a shorter version for a different agent persona, tell me which section to trim or expand and I will iterate.
 ]
-```
-
-Use this exact shape (roles + `content` entries with `type`) when building tests or additional examples; downstream tooling expects `input_text`/`output_text` types.
-
-## Notes about dependencies and run files
-- A minimal `requirements.txt` is provided for reproducible installs. Use it to install Python deps before running the script.
-- The project relies on Node.js for MCP servers (`npx @playwright/mcp`) — install Node/npm on your PATH before running.
-
-## Multi-turn & tool-invocation example
-Below is a compact multi-turn example showing how the `user` asks for a web task, the `assistant` may emit tool-invocation code (Playwright), and later return structured `output_text` with a YAML snapshot. This mirrors the example in `agent_webscrap.py` and is the shape other tooling expects.
-
-```json
-[
-  { "role": "user", "content": [{ "type": "input_text", "text": "Visit https://example.com and return title + screenshot." }] },
-  { "role": "assistant", "status": "tool_call", "content": [{ "type": "output_text", "text": "### Ran Playwright code\n```js\nawait page.goto('https://example.com');\nawait page.screenshot({ path: 'shot.png' });\n```" }] },
-  { "role": "assistant", "status": "completed", "content": [{ "type": "output_text", "text": "### Page state\n- Page URL: https://example.com/\n- Page Title: Example Domain\n- Page Snapshot:\n```yaml\n- generic:\n  - heading \"Example Domain\"\n```" }] }
-]
-```
-
-Treat `status: "tool_call"` or similar markers as informational; the runtime may use other fields to identify tool usage. Keep `content` entries as arrays of typed pieces so downstream parsers can iterate predictably.
-
-## Parsing assistant output (example)
-When the assistant embeds structured data (JSON strings or YAML blocks) inside `output_text`, you can extract and parse it programmatically. A small example script is provided at `examples/parse_output.py` that demonstrates:
-- locating `output_text` entries in a `Runner.run` response
-- extracting fenced ```yaml``` blocks and parsing them with `PyYAML`
-
-Use the `examples/parse_output.py` as a copyable reference for downstream tooling that needs to extract headings, screenshots references, or snapshots from assistant outputs.
-
----
-If anything above is unclear or you want more detail about a specific integration (for example, the exact environment `npx` expects or how responses are parsed), tell me which area to expand and I will update this file.
