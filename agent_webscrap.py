@@ -9,6 +9,8 @@ import logging
 import os
 import sys
 from typing import Any
+import shutil
+import subprocess
 
 from agents import Agent, AgentOutputSchemaBase, ModelSettings, OpenAIChatCompletionsModel, Runner, set_tracing_disabled
 from agents.mcp import MCPServerSse, MCPServerStdio, MCPServerStreamableHttp
@@ -16,6 +18,26 @@ from agents.mcp import MCPServerSse, MCPServerStdio, MCPServerStreamableHttp
 from openai import AsyncOpenAI
 
 async def main():
+    # Preflight checks: ensure required runtime and env are present.
+    # Set SKIP_PREFLIGHT=1 to bypass these checks in CI or constrained envs.
+    if not os.environ.get("SKIP_PREFLIGHT"):
+        missing = []
+        if not os.environ.get("GITHUB_TOKEN"):
+            missing.append("GITHUB_TOKEN (GitHub PAT)")
+        if not shutil.which("node"):
+            missing.append("node (Node.js)")
+        if not shutil.which("npx"):
+            missing.append("npx (npm package runner)")
+        if missing:
+            print("Preflight failed — missing:", ", ".join(missing))
+            print("Set SKIP_PREFLIGHT=1 to bypass checks if intentional.")
+            sys.exit(1)
+
+        # Optional: quick npx reachability check (non-invasive)
+        try:
+            subprocess.run(["npx", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        except Exception:
+            print("Warning: `npx` exists but failed to run `npx --version`. Network or execution policy may affect MCP startup.")
     # To authenticate with the model you will need to generate a personal access token (PAT) in your GitHub settings.
     # Create your PAT token by following instructions here: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
     openaiClient = AsyncOpenAI(
